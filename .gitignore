@@ -1,0 +1,56 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+.venv/
+venv/
+env/
+.env
+.env.*
+pip-wheel-metadata/
+build/
+dist/
+*.egg-info/
+
+# Tests and tooling
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# DRL / ML outputs
+runs/
+logs/
+wandb/
+tensorboard/
+checkpoints/
+models/
+policies/
+*.pt
+*.pth
+*.onnx
+*.ckpt
+*.pkl
+*.npz
+
+# MuJoCo / simulation outputs
+recordings/
+videos/
+frames/
+*.mp4
+*.avi
+*.mov
+*.mjb
+*.log
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
