@@ -1,6 +1,7 @@
 rsl-rl-lib
 mujoco
 gymnasium
+stable-baselines3
 wandb
 tensorboard
 jax[cuda13]<0.10

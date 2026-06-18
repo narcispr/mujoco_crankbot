@@ -1,0 +1,89 @@
+from __future__ import annotations
+
+import argparse
+from datetime import datetime
+from pathlib import Path
+
+from stable_baselines3 import SAC
+from stable_baselines3.common.callbacks import CheckpointCallback
+from stable_baselines3.common.monitor import Monitor
+from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
+
+try:
+    from crankbot_walk_env import CrankBotWalkEnvConfig
+    from crankbot_walk_gym_env import CrankBotWalkGymEnv
+except ImportError:
+    from .crankbot_walk_env import CrankBotWalkEnvConfig
+    from .crankbot_walk_gym_env import CrankBotWalkGymEnv
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Train CrankBot walking with Gymnasium and SB3 SAC.")
+    parser.add_argument("--xml", default="scene.xml", help="MuJoCo XML path relative to the repo root.")
+    parser.add_argument("--num-envs", type=int, default=8)
+    parser.add_argument("--vec-env", choices=("dummy", "subproc"), default="subproc")
+    parser.add_argument("--timesteps", type=int, default=500_000)
+    parser.add_argument("--seed", type=int, default=1)
+    parser.add_argument("--device", default="auto")
+    parser.add_argument("--log-root", default="logs/crankbot_walk_gym")
+    parser.add_argument("--run-name", default=None)
+    parser.add_argument("--save-freq", type=int, default=25_000)
+    parser.add_argument("--learning-rate", type=float, default=3.0e-4)
+    parser.add_argument("--buffer-size", type=int, default=200_000)
+    parser.add_argument("--batch-size", type=int, default=256)
+    parser.add_argument("--learning-starts", type=int, default=2_000)
+    parser.add_argument("--gamma", type=float, default=0.99)
+    parser.add_argument("--tau", type=float, default=0.005)
+    return parser.parse_args()
+
+
+def main() -> None:
+    args = parse_args()
+    if args.run_name is None:
+        args.run_name = datetime.now().strftime("run_%Y%m%d_%H%M%S")
+
+    log_dir = (Path(args.log_root) / args.run_name).resolve()
+    log_dir.mkdir(parents=True, exist_ok=True)
+
+    monitor_dir = log_dir / "monitor"
+    monitor_dir.mkdir(parents=True, exist_ok=True)
+
+    def make_env(rank: int):
+        def _init() -> Monitor:
+            cfg = CrankBotWalkEnvConfig(xml_path=args.xml, num_envs=1, seed=args.seed + rank)
+            return Monitor(CrankBotWalkGymEnv(cfg), filename=str(monitor_dir / f"{rank}"))
+
+        return _init
+
+    vec_env_cls = DummyVecEnv if args.vec_env == "dummy" else SubprocVecEnv
+    env = vec_env_cls([make_env(rank) for rank in range(args.num_envs)])
+
+    checkpoint_callback = CheckpointCallback(
+        save_freq=max(args.save_freq // args.num_envs, 1),
+        save_path=str(log_dir / "checkpoints"),
+        name_prefix="sac_crankbot_walk",
+        save_replay_buffer=True,
+        save_vecnormalize=True,
+    )
+
+    model = SAC(
+        "MlpPolicy",
+        env,
+        learning_rate=args.learning_rate,
+        buffer_size=args.buffer_size,
+        learning_starts=args.learning_starts,
+        batch_size=args.batch_size,
+        gamma=args.gamma,
+        tau=args.tau,
+        seed=args.seed,
+        device=args.device,
+        tensorboard_log=str(log_dir),
+        verbose=1,
+    )
+    model.learn(total_timesteps=args.timesteps, callback=checkpoint_callback)
+    model.save(str(log_dir / "final_model"))
+    env.close()
+
+
+if __name__ == "__main__":
+    main()
