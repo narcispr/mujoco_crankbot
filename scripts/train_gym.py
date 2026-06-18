@@ -5,7 +5,9 @@ from datetime import datetime
 from pathlib import Path
 
 from stable_baselines3 import SAC
+from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.callbacks import CheckpointCallback
+from stable_baselines3.common.callbacks import CallbackList
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
 
@@ -27,6 +29,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--device", default="auto")
     parser.add_argument("--log-root", default="logs/crankbot_walk_gym")
     parser.add_argument("--run-name", default=None)
+    parser.add_argument("--logger", choices=("wandb", "tensorboard", "none"), default="wandb")
+    parser.add_argument("--wandb-project", default="crankbot-walk-gym")
     parser.add_argument("--save-freq", type=int, default=25_000)
     parser.add_argument("--learning-rate", type=float, default=3.0e-4)
     parser.add_argument("--buffer-size", type=int, default=200_000)
@@ -58,13 +62,42 @@ def main() -> None:
     vec_env_cls = DummyVecEnv if args.vec_env == "dummy" else SubprocVecEnv
     env = vec_env_cls([make_env(rank) for rank in range(args.num_envs)])
 
-    checkpoint_callback = CheckpointCallback(
+    checkpoint_callback: BaseCallback = CheckpointCallback(
         save_freq=max(args.save_freq // args.num_envs, 1),
         save_path=str(log_dir / "checkpoints"),
         name_prefix="sac_crankbot_walk",
         save_replay_buffer=True,
         save_vecnormalize=True,
     )
+    callback: BaseCallback = checkpoint_callback
+    wandb_run = None
+
+    tensorboard_log = str(log_dir) if args.logger in ("wandb", "tensorboard") else None
+    if args.logger == "wandb":
+        try:
+            import wandb
+            from wandb.integration.sb3 import WandbCallback
+
+            wandb_run = wandb.init(
+                project=args.wandb_project,
+                name=args.run_name,
+                dir=str(log_dir),
+                config=vars(args),
+                sync_tensorboard=True,
+            )
+            callback = CallbackList(
+                [
+                    checkpoint_callback,
+                    WandbCallback(
+                        gradient_save_freq=0,
+                        model_save_path=str(log_dir / "wandb_model"),
+                        verbose=1,
+                    ),
+                ]
+            )
+        except ImportError:
+            print("wandb is not installed; continuing with TensorBoard logging.")
+            tensorboard_log = str(log_dir)
 
     model = SAC(
         "MlpPolicy",
@@ -77,12 +110,16 @@ def main() -> None:
         tau=args.tau,
         seed=args.seed,
         device=args.device,
-        tensorboard_log=str(log_dir),
+        tensorboard_log=tensorboard_log,
         verbose=1,
     )
-    model.learn(total_timesteps=args.timesteps, callback=checkpoint_callback)
-    model.save(str(log_dir / "final_model"))
-    env.close()
+    try:
+        model.learn(total_timesteps=args.timesteps, callback=callback)
+        model.save(str(log_dir / "final_model"))
+    finally:
+        env.close()
+        if wandb_run is not None:
+            wandb_run.finish()
 
 
 if __name__ == "__main__":
