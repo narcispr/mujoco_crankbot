@@ -2,3 +2,8 @@ rsl-rl-lib
 mujoco
 gymnasium
 wandb
+tensorboard
+jax[cuda13]<0.10
+brax
+flax
+optax
