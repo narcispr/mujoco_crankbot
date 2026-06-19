@@ -340,8 +340,8 @@ class CrankBotWalkEnv(VecEnv):
 
         base_xmat = data.xmat[self.base_body_id].reshape(3, 3)
         base_xy = data.xpos[self.base_body_id, :2]
-        forward_axis = base_xmat[:2, 0]
-        left_axis = base_xmat[:2, 1]
+        forward_axis = -base_xmat[:2, 1]
+        left_axis = base_xmat[:2, 0]
         self.goal_pos_world[env_id] = base_xy + forward * forward_axis + lateral * left_axis
 
     def _update_goal_signals(self, env_ids: np.ndarray) -> None:
@@ -409,7 +409,7 @@ class CrankBotWalkEnv(VecEnv):
     @staticmethod
     def _yaw_from_xmat(xmat: np.ndarray) -> float:
         mat = xmat.reshape(3, 3)
-        return math.atan2(mat[1, 0], mat[0, 0])
+        return math.atan2(-mat[1, 1], -mat[0, 1])
 
     @staticmethod
     def _wrap_to_pi(angle: float) -> float:
