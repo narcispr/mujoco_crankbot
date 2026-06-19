@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import argparse
 import math
+import time
 from datetime import datetime
 from pathlib import Path
 
 import numpy as np
 from stable_baselines3 import SAC
 from stable_baselines3.common.callbacks import BaseCallback
-from stable_baselines3.common.callbacks import CheckpointCallback
 from stable_baselines3.common.callbacks import CallbackList
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
@@ -43,6 +43,45 @@ class GoalMetricsCallback(BaseCallback):
         return True
 
 
+class WallClockCheckpointCallback(BaseCallback):
+    def __init__(
+        self,
+        save_interval_s: float,
+        save_path: Path,
+        name_prefix: str,
+        save_replay_buffer: bool = False,
+        save_vecnormalize: bool = False,
+    ) -> None:
+        super().__init__()
+        self.save_interval_s = save_interval_s
+        self.save_path = save_path
+        self.name_prefix = name_prefix
+        self.save_replay_buffer = save_replay_buffer
+        self.save_vecnormalize = save_vecnormalize
+        self.last_save_time = 0.0
+
+    def _init_callback(self) -> None:
+        self.save_path.mkdir(parents=True, exist_ok=True)
+        self.last_save_time = time.monotonic()
+
+    def _on_step(self) -> bool:
+        now = time.monotonic()
+        if now - self.last_save_time < self.save_interval_s:
+            return True
+
+        checkpoint_stem = self.save_path / f"{self.name_prefix}_{self.num_timesteps}_steps"
+        self.model.save(str(checkpoint_stem))
+        if self.save_replay_buffer:
+            self.model.save_replay_buffer(str(checkpoint_stem) + "_replay_buffer.pkl")
+        if self.save_vecnormalize:
+            vec_normalize = self.model.get_vec_normalize_env()
+            if vec_normalize is not None:
+                vec_normalize.save(str(checkpoint_stem) + "_vecnormalize.pkl")
+
+        self.last_save_time = now
+        return True
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Train CrankBot walking with Gymnasium and SB3 SAC.")
     parser.add_argument("--xml", default="scene.xml", help="MuJoCo XML path relative to the repo root.")
@@ -55,7 +94,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--run-name", default=None)
     parser.add_argument("--logger", choices=("wandb", "tensorboard", "none"), default="wandb")
     parser.add_argument("--wandb-project", default="crankbot-walk-gym")
-    parser.add_argument("--save-freq", type=int, default=25_000)
+    parser.add_argument("--save-interval-minutes", type=float, default=20.0)
+    parser.add_argument("--save-freq", type=int, default=None, help=argparse.SUPPRESS)
     parser.add_argument("--save-replay-buffer", action="store_true")
     parser.add_argument("--save-vecnormalize", action="store_true")
     parser.add_argument("--learning-rate", type=float, default=1.0e-4)
@@ -80,6 +120,8 @@ def main() -> None:
     args = parse_args()
     if args.run_name is None:
         args.run_name = datetime.now().strftime("run_%Y%m%d_%H%M%S")
+    if args.save_interval_minutes <= 0.0:
+        raise ValueError("--save-interval-minutes must be positive.")
     if args.learning_starts is None:
         args.learning_starts = max(20_000, args.num_envs * CrankBotWalkEnvConfig.max_episode_steps * 2)
 
@@ -99,9 +141,9 @@ def main() -> None:
     vec_env_cls = DummyVecEnv if args.vec_env == "dummy" else SubprocVecEnv
     env = vec_env_cls([make_env(rank) for rank in range(args.num_envs)])
 
-    checkpoint_callback: BaseCallback = CheckpointCallback(
-        save_freq=max(args.save_freq // args.num_envs, 1),
-        save_path=str(log_dir / "checkpoints"),
+    checkpoint_callback: BaseCallback = WallClockCheckpointCallback(
+        save_interval_s=args.save_interval_minutes * 60.0,
+        save_path=log_dir / "checkpoints",
         name_prefix="sac_crankbot_walk",
         save_replay_buffer=args.save_replay_buffer,
         save_vecnormalize=args.save_vecnormalize,
