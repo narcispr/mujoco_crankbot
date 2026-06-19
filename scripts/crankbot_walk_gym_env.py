@@ -74,6 +74,8 @@ class CrankBotWalkGymEnv(CrankBotWalkEnv, gym.Env):
             "goal_range": float(self.goal_range[0]),
             "goal_reached": bool(self.goal_reached[0]),
             "base_velocity_body": self.base_velocity_body[0].astype(np.float32, copy=True),
+            "leg_contact": bool(self.leg_contact[0]),
+            "lower_leg_contact": bool(self.lower_leg_contact[0]),
         }
         if "log" in extras:
             info["log"] = {

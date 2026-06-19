@@ -30,6 +30,20 @@ FOOT_GEOM_NAMES = (
     "back_right_lower_leg_foot",
 )
 
+LEG_CONTACT_GEOM_NAMES = (
+    "front_left_leg_collision",
+    "front_right_leg_collision",
+    "back_left_leg_collision",
+    "back_right_leg_collision",
+)
+
+LOWER_LEG_CONTACT_GEOM_NAMES = (
+    "front_left_lower_leg_collision",
+    "front_right_lower_leg_collision",
+    "back_left_lower_leg_collision",
+    "back_right_lower_leg_collision",
+)
+
 
 @dataclass
 class CrankBotWalkEnvConfig:
@@ -51,7 +65,7 @@ class CrankBotWalkEnvConfig:
     goal_site_name: str = "goal_site"
     goal_site_z: float = 0.02
     initial_pose_noise: float = 0.10
-    target_initial_pose_noise: float = 0.50
+    target_initial_pose_noise: float = 0.35
     servo_position_error: float = 0.0
     command_delta_limit: float = 0.75
     smoothness_coef: float = 0.002
@@ -60,6 +74,8 @@ class CrankBotWalkEnvConfig:
     target_action_coef: float = 0.001
     idle_action_penalty: float = 0.02
     idle_action_tolerance: float = 1e-4
+    leg_contact_penalty: float = 0.15
+    lower_leg_contact_penalty: float = 0.0
     body_contact_penalty: float = 0.5
     target_body_contact_penalty: float = 1.0
     fall_penalty: float = 2.0
@@ -72,7 +88,7 @@ class CrankBotWalkEnvConfig:
 class CrankBotWalkEnv(VecEnv):
     num_actions = 8
     num_obs = 68
-    num_privileged_obs = 79
+    num_privileged_obs = 80
 
     def __init__(self, cfg: CrankBotWalkEnvConfig, device: str = "cpu") -> None:
         self.cfg = cfg
@@ -100,6 +116,14 @@ class CrankBotWalkEnv(VecEnv):
         self.floor_geom_id = self._optional_geom_id("floor")
         self.goal_site_id = self._optional_site_id(cfg.goal_site_name)
         self.foot_geom_ids = np.array([self._geom_id(name) for name in FOOT_GEOM_NAMES], dtype=np.int32)
+        self.leg_contact_geom_ids = np.array(
+            [self._geom_id(name) for name in LEG_CONTACT_GEOM_NAMES],
+            dtype=np.int32,
+        )
+        self.lower_leg_contact_geom_ids = np.array(
+            [self._geom_id(name) for name in LOWER_LEG_CONTACT_GEOM_NAMES],
+            dtype=np.int32,
+        )
 
         self.joint_ids = np.array([self._joint_id(name) for name in JOINT_NAMES], dtype=np.int32)
         self.joint_qposadr = self.model.jnt_qposadr[self.joint_ids].astype(np.int32)
@@ -133,6 +157,8 @@ class CrankBotWalkEnv(VecEnv):
         self.base_z = np.zeros(self.num_envs, dtype=np.float64)
         self.roll_pitch = np.zeros((self.num_envs, 2), dtype=np.float64)
         self.foot_contacts = np.zeros((self.num_envs, 4), dtype=np.float64)
+        self.leg_contact = np.zeros(self.num_envs, dtype=np.float64)
+        self.lower_leg_contact = np.zeros(self.num_envs, dtype=np.float64)
         self.body_contact = np.zeros(self.num_envs, dtype=np.float64)
         self.fall = np.zeros(self.num_envs, dtype=np.float64)
         self.success_history: deque[bool] = deque(maxlen=100)
@@ -247,8 +273,10 @@ class CrankBotWalkEnv(VecEnv):
             self.base_yaw[env_id] = self._yaw_from_xmat(base_xmat)
             self.base_z[env_id] = data.xpos[self.base_body_id, 2]
             self.roll_pitch[env_id] = self._roll_pitch_from_xmat(base_xmat)
-            foot_contacts, body_contact = self._contact_flags(data)
+            foot_contacts, leg_contact, lower_leg_contact, body_contact = self._contact_flags(data)
             self.foot_contacts[env_id] = foot_contacts
+            self.leg_contact[env_id] = float(leg_contact)
+            self.lower_leg_contact[env_id] = float(lower_leg_contact)
             self.body_contact[env_id] = float(body_contact)
             self.fall[env_id] = float(self.base_z[env_id] < self.cfg.fall_height)
         self._update_goal_signals(np.arange(self.num_envs, dtype=np.int32))
@@ -264,6 +292,8 @@ class CrankBotWalkEnv(VecEnv):
             - self.current_smoothness_coef * smoothness
             - self.current_action_coef * action_mag
             - idle_penalty
+            - self.cfg.leg_contact_penalty * self.leg_contact
+            - self.cfg.lower_leg_contact_penalty * self.lower_leg_contact
             - self.current_body_contact_penalty * self.body_contact
             - self.cfg.fall_penalty * self.fall
         )
@@ -311,6 +341,7 @@ class CrankBotWalkEnv(VecEnv):
                 self.base_z[:, None],
                 self.roll_pitch,
                 self.foot_contacts,
+                self.leg_contact[:, None],
                 self.body_contact[:, None],
             ),
             axis=1,
@@ -325,6 +356,8 @@ class CrankBotWalkEnv(VecEnv):
             "log": {
                 "/env/mean_goal_range": torch.as_tensor(self.goal_range.mean(), device=self.device),
                 "/env/goal_reached": torch.as_tensor(self.goal_reached.mean(), device=self.device),
+                "/env/leg_contact": torch.as_tensor(self.leg_contact.mean(), device=self.device),
+                "/env/lower_leg_contact": torch.as_tensor(self.lower_leg_contact.mean(), device=self.device),
                 "/env/body_contact": torch.as_tensor(self.body_contact.mean(), device=self.device),
                 "/env/success_rate": torch.as_tensor(success_rate, device=self.device),
                 "/curriculum/goal_forward": torch.as_tensor(self.current_goal_forward, device=self.device),
@@ -364,8 +397,10 @@ class CrankBotWalkEnv(VecEnv):
         )
         mujoco.mj_forward(self.model, self.data[0])
 
-    def _contact_flags(self, data: mujoco.MjData) -> tuple[np.ndarray, bool]:
+    def _contact_flags(self, data: mujoco.MjData) -> tuple[np.ndarray, bool, bool, bool]:
         foot_contacts = np.zeros(4, dtype=np.float64)
+        leg_contact = False
+        lower_leg_contact = False
         body_contact = False
         for contact_idx in range(data.ncon):
             contact = data.contact[contact_idx]
@@ -375,8 +410,12 @@ class CrankBotWalkEnv(VecEnv):
             for foot_idx, foot_geom_id in enumerate(self.foot_geom_ids):
                 if foot_geom_id in geom_pair:
                     foot_contacts[foot_idx] = 1.0
+            leg_contact = leg_contact or any(leg_geom_id in geom_pair for leg_geom_id in self.leg_contact_geom_ids)
+            lower_leg_contact = lower_leg_contact or any(
+                leg_geom_id in geom_pair for leg_geom_id in self.lower_leg_contact_geom_ids
+            )
             body_contact = body_contact or self.base_geom_id in geom_pair
-        return foot_contacts, body_contact
+        return foot_contacts, leg_contact, lower_leg_contact, body_contact
 
     @staticmethod
     def _roll_pitch_from_xmat(xmat: np.ndarray) -> np.ndarray:
