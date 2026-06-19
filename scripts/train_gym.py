@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import argparse
+import math
 from datetime import datetime
 from pathlib import Path
 
+import numpy as np
 from stable_baselines3 import SAC
 from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.callbacks import CheckpointCallback
@@ -17,6 +19,28 @@ try:
 except ImportError:
     from .crankbot_walk_env import CrankBotWalkEnvConfig
     from .crankbot_walk_gym_env import CrankBotWalkGymEnv
+
+
+class GoalMetricsCallback(BaseCallback):
+    def _on_step(self) -> bool:
+        infos = self.locals.get("infos", [])
+        logs = [info["log"] for info in infos if "log" in info]
+        if not logs:
+            return True
+
+        def mean_log(key: str) -> float:
+            return float(np.mean([log[key] for log in logs]))
+
+        goal_forward = mean_log("/curriculum/goal_forward")
+        goal_lateral = mean_log("/curriculum/goal_lateral")
+        self.logger.record("goal/range", mean_log("/env/mean_goal_range"))
+        self.logger.record("goal/reached_rate", mean_log("/env/goal_reached"))
+        self.logger.record("goal/success_rate", mean_log("/env/success_rate"))
+        self.logger.record("goal/body_contact", mean_log("/env/body_contact"))
+        self.logger.record("curriculum/goal_forward", goal_forward)
+        self.logger.record("curriculum/goal_lateral", goal_lateral)
+        self.logger.record("curriculum/goal_max_distance", math.hypot(goal_forward, goal_lateral))
+        return True
 
 
 def parse_args() -> argparse.Namespace:
@@ -69,7 +93,7 @@ def main() -> None:
         save_replay_buffer=True,
         save_vecnormalize=True,
     )
-    callback: BaseCallback = checkpoint_callback
+    callbacks: list[BaseCallback] = [checkpoint_callback, GoalMetricsCallback()]
     wandb_run = None
 
     tensorboard_log = str(log_dir) if args.logger in ("wandb", "tensorboard") else None
@@ -85,19 +109,17 @@ def main() -> None:
                 config=vars(args),
                 sync_tensorboard=True,
             )
-            callback = CallbackList(
-                [
-                    checkpoint_callback,
-                    WandbCallback(
-                        gradient_save_freq=0,
-                        model_save_path=str(log_dir / "wandb_model"),
-                        verbose=1,
-                    ),
-                ]
+            callbacks.append(
+                WandbCallback(
+                    gradient_save_freq=0,
+                    model_save_path=str(log_dir / "wandb_model"),
+                    verbose=1,
+                )
             )
         except ImportError:
             print("wandb is not installed; continuing with TensorBoard logging.")
             tensorboard_log = str(log_dir)
+    callback: BaseCallback = CallbackList(callbacks)
 
     model = SAC(
         "MlpPolicy",
