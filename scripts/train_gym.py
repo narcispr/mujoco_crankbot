@@ -56,10 +56,21 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--logger", choices=("wandb", "tensorboard", "none"), default="wandb")
     parser.add_argument("--wandb-project", default="crankbot-walk-gym")
     parser.add_argument("--save-freq", type=int, default=25_000)
-    parser.add_argument("--learning-rate", type=float, default=3.0e-4)
+    parser.add_argument("--save-replay-buffer", action="store_true")
+    parser.add_argument("--save-vecnormalize", action="store_true")
+    parser.add_argument("--learning-rate", type=float, default=1.0e-4)
     parser.add_argument("--buffer-size", type=int, default=200_000)
-    parser.add_argument("--batch-size", type=int, default=256)
-    parser.add_argument("--learning-starts", type=int, default=2_000)
+    parser.add_argument("--batch-size", type=int, default=512)
+    parser.add_argument(
+        "--learning-starts",
+        type=int,
+        default=None,
+        help="Warmup transitions before SAC updates. Defaults to max(20000, num_envs * max_episode_steps * 2).",
+    )
+    parser.add_argument("--train-freq", type=int, default=4)
+    parser.add_argument("--gradient-steps", type=int, default=32)
+    parser.add_argument("--ent-coef", default="auto_0.1")
+    parser.add_argument("--net-arch", type=int, nargs="+", default=[256, 256, 128])
     parser.add_argument("--gamma", type=float, default=0.99)
     parser.add_argument("--tau", type=float, default=0.005)
     return parser.parse_args()
@@ -69,6 +80,8 @@ def main() -> None:
     args = parse_args()
     if args.run_name is None:
         args.run_name = datetime.now().strftime("run_%Y%m%d_%H%M%S")
+    if args.learning_starts is None:
+        args.learning_starts = max(20_000, args.num_envs * CrankBotWalkEnvConfig.max_episode_steps * 2)
 
     log_dir = (Path(args.log_root) / args.run_name).resolve()
     log_dir.mkdir(parents=True, exist_ok=True)
@@ -90,8 +103,8 @@ def main() -> None:
         save_freq=max(args.save_freq // args.num_envs, 1),
         save_path=str(log_dir / "checkpoints"),
         name_prefix="sac_crankbot_walk",
-        save_replay_buffer=True,
-        save_vecnormalize=True,
+        save_replay_buffer=args.save_replay_buffer,
+        save_vecnormalize=args.save_vecnormalize,
     )
     callbacks: list[BaseCallback] = [checkpoint_callback, GoalMetricsCallback()]
     wandb_run = None
@@ -128,8 +141,12 @@ def main() -> None:
         buffer_size=args.buffer_size,
         learning_starts=args.learning_starts,
         batch_size=args.batch_size,
+        train_freq=args.train_freq,
+        gradient_steps=args.gradient_steps,
         gamma=args.gamma,
         tau=args.tau,
+        ent_coef=args.ent_coef,
+        policy_kwargs={"net_arch": args.net_arch},
         seed=args.seed,
         device=args.device,
         tensorboard_log=tensorboard_log,
