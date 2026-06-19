@@ -69,7 +69,10 @@ class CrankBotWalkGymEnv(CrankBotWalkEnv, gym.Env):
 
     def _info(self, extras: dict[str, Any]) -> dict[str, Any]:
         info: dict[str, Any] = {
-            "command": self.commands[0].astype(np.float32, copy=True),
+            "goal_position": self.goal_pos_world[0].astype(np.float32, copy=True),
+            "goal_bearing": float(self.goal_bearing[0]),
+            "goal_range": float(self.goal_range[0]),
+            "goal_reached": bool(self.goal_reached[0]),
             "base_velocity_body": self.base_velocity_body[0].astype(np.float32, copy=True),
         }
         if "log" in extras:

@@ -42,28 +42,28 @@ class CrankBotWalkEnvConfig:
     max_episode_steps: int = 80
     history_len: int = 4
     gait_frequency: float = 1.0
-    global_max_vx: float = 0.15
-    global_max_wz: float = 0.50
-    initial_max_vx: float = 0.05
-    initial_max_wz: float = 0.0
-    target_max_vx: float = 0.15
-    target_max_wz: float = 0.50
+    initial_goal_forward: float = 0.25
+    target_goal_forward: float = 0.60
+    initial_goal_lateral: float = 0.0
+    target_goal_lateral: float = 0.30
+    goal_reach_radius: float = 0.20
+    goal_reward_scale: float = 0.25
+    goal_site_name: str = "goal_site"
+    goal_site_z: float = 0.02
     initial_pose_noise: float = 0.10
     target_initial_pose_noise: float = 0.50
     servo_position_error: float = 0.0
     command_delta_limit: float = 0.75
-    k_vx: float = 4.0
-    k_wz: float = 2.0
     smoothness_coef: float = 0.002
     target_smoothness_coef: float = 0.005
     action_coef: float = 0.0005
     target_action_coef: float = 0.001
+    idle_action_penalty: float = 0.02
+    idle_action_tolerance: float = 1e-4
     body_contact_penalty: float = 0.5
     target_body_contact_penalty: float = 1.0
     fall_penalty: float = 2.0
     fall_height: float = 0.025
-    vx_success_threshold: float = 0.025
-    wz_success_threshold: float = 0.05
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -98,6 +98,7 @@ class CrankBotWalkEnv(VecEnv):
         self.base_body_id = self._body_id("base")
         self.base_geom_id = self._geom_id("base_collision")
         self.floor_geom_id = self._optional_geom_id("floor")
+        self.goal_site_id = self._optional_site_id(cfg.goal_site_name)
         self.foot_geom_ids = np.array([self._geom_id(name) for name in FOOT_GEOM_NAMES], dtype=np.int32)
 
         self.joint_ids = np.array([self._joint_id(name) for name in JOINT_NAMES], dtype=np.int32)
@@ -122,22 +123,23 @@ class CrankBotWalkEnv(VecEnv):
         self.last_action = np.zeros((self.num_envs, self.num_actions), dtype=np.float64)
         self.q_cmd_history = np.zeros((self.num_envs, cfg.history_len, self.num_actions), dtype=np.float64)
         self.action_history = np.zeros_like(self.q_cmd_history)
-        self.commands = np.zeros((self.num_envs, 2), dtype=np.float64)
+        self.goal_pos_world = np.zeros((self.num_envs, 2), dtype=np.float64)
+        self.goal_bearing = np.zeros(self.num_envs, dtype=np.float64)
+        self.goal_range = np.zeros(self.num_envs, dtype=np.float64)
+        self.goal_reached = np.zeros(self.num_envs, dtype=bool)
         self.phase = np.zeros(self.num_envs, dtype=np.float64)
         self.base_velocity_body = np.zeros((self.num_envs, 3), dtype=np.float64)
+        self.base_yaw = np.zeros(self.num_envs, dtype=np.float64)
         self.base_z = np.zeros(self.num_envs, dtype=np.float64)
         self.roll_pitch = np.zeros((self.num_envs, 2), dtype=np.float64)
         self.foot_contacts = np.zeros((self.num_envs, 4), dtype=np.float64)
         self.body_contact = np.zeros(self.num_envs, dtype=np.float64)
         self.fall = np.zeros(self.num_envs, dtype=np.float64)
-        self.vx_error_history = np.zeros((self.num_envs, 20), dtype=np.float64)
-        self.wz_error_history = np.zeros((self.num_envs, 20), dtype=np.float64)
-        self.error_history_pos = np.zeros(self.num_envs, dtype=np.int32)
-        self.episode_body_contact = np.zeros(self.num_envs, dtype=bool)
         self.success_history: deque[bool] = deque(maxlen=100)
+        self.target_goal_range = max(math.hypot(cfg.target_goal_forward, cfg.target_goal_lateral), 1e-6)
 
-        self.current_max_vx = cfg.initial_max_vx
-        self.current_max_wz = cfg.initial_max_wz
+        self.current_goal_forward = cfg.initial_goal_forward
+        self.current_goal_lateral = cfg.initial_goal_lateral
         self.current_initial_pose_noise = cfg.initial_pose_noise
         self.current_smoothness_coef = cfg.smoothness_coef
         self.current_action_coef = cfg.action_coef
@@ -172,22 +174,21 @@ class CrankBotWalkEnv(VecEnv):
             data.qvel[self.root_dofadr : self.root_dofadr + 6] = 0.0
             data.ctrl[:] = q_cmd
             mujoco.mj_forward(self.model, data)
+            self.base_yaw[env_id] = self._yaw_from_xmat(data.xmat[self.base_body_id])
 
             self.q_cmd[env_id] = q_cmd
             self.last_action[env_id] = 0.0
             self.q_cmd_history[env_id] = q_cmd - self.q_stand
             self.action_history[env_id] = 0.0
-            self.commands[env_id, 0] = self.rng.uniform(0.0, self.current_max_vx)
-            self.commands[env_id, 1] = self.rng.uniform(-self.current_max_wz, self.current_max_wz)
+            self._sample_goal(int(env_id), data)
             self.phase[env_id] = self.rng.uniform(0.0, 2.0 * math.pi)
-            self.vx_error_history[env_id] = 0.0
-            self.wz_error_history[env_id] = 0.0
-            self.error_history_pos[env_id] = 0
-            self.episode_body_contact[env_id] = False
+            self.goal_reached[env_id] = False
 
         ids = torch.as_tensor(env_ids, dtype=torch.long, device=self.device)
         self.episode_length_buf[ids] = 0
         self.reset_buf[ids] = False
+        self._update_goal_signals(env_ids)
+        self._update_goal_site()
 
     def step(self, actions: torch.Tensor) -> tuple[TensorDict, torch.Tensor, torch.Tensor, dict]:
         actions_np = actions.detach().cpu().numpy().astype(np.float64)
@@ -206,7 +207,10 @@ class CrankBotWalkEnv(VecEnv):
         self._update_measurements()
         self._compute_rewards(actions_np, previous_action)
         time_outs = self.episode_length_buf >= self.max_episode_length
-        dones = torch.logical_or(time_outs, torch.as_tensor(self.fall > 0.0, device=self.device))
+        dones = torch.logical_or(
+            torch.logical_or(time_outs, torch.as_tensor(self.fall > 0.0, device=self.device)),
+            torch.as_tensor(self.goal_reached, device=self.device),
+        )
         self.reset_buf[:] = dones
 
         self._update_histories(actions_np)
@@ -238,36 +242,32 @@ class CrankBotWalkEnv(VecEnv):
             mujoco.mj_objectVelocity(
                 self.model, data, mujoco.mjtObj.mjOBJ_BODY, self.base_body_id, velocity, True
             )
+            base_xmat = data.xmat[self.base_body_id]
             self.base_velocity_body[env_id] = (velocity[3], velocity[4], velocity[2])
+            self.base_yaw[env_id] = self._yaw_from_xmat(base_xmat)
             self.base_z[env_id] = data.xpos[self.base_body_id, 2]
-            self.roll_pitch[env_id] = self._roll_pitch_from_xmat(data.xmat[self.base_body_id])
+            self.roll_pitch[env_id] = self._roll_pitch_from_xmat(base_xmat)
             foot_contacts, body_contact = self._contact_flags(data)
             self.foot_contacts[env_id] = foot_contacts
             self.body_contact[env_id] = float(body_contact)
-            self.episode_body_contact[env_id] = self.episode_body_contact[env_id] or body_contact
             self.fall[env_id] = float(self.base_z[env_id] < self.cfg.fall_height)
+        self._update_goal_signals(np.arange(self.num_envs, dtype=np.int32))
 
     def _compute_rewards(self, actions: np.ndarray, previous_action: np.ndarray) -> None:
-        evx = (self.commands[:, 0] - self.base_velocity_body[:, 0]) / self.cfg.global_max_vx
-        ewz = (self.commands[:, 1] - self.base_velocity_body[:, 2]) / self.cfg.global_max_wz
-        r_vx = np.exp(-self.cfg.k_vx * evx**2)
-        r_wz = np.exp(-self.cfg.k_wz * ewz**2)
+        goal_reward = -np.tanh(self.goal_range / self.cfg.goal_reward_scale)
         smoothness = np.sum((actions - previous_action) ** 2, axis=1)
         action_mag = np.sum(actions**2, axis=1)
+        idle_action = np.all(np.abs(actions) <= self.cfg.idle_action_tolerance, axis=1)
+        idle_penalty = self.cfg.idle_action_penalty * idle_action * ~self.goal_reached
         reward = (
-            r_vx
-            + 0.5 * r_wz
+            goal_reward
             - self.current_smoothness_coef * smoothness
             - self.current_action_coef * action_mag
+            - idle_penalty
             - self.current_body_contact_penalty * self.body_contact
             - self.cfg.fall_penalty * self.fall
         )
         self.rew_buf[:] = torch.as_tensor(reward, dtype=torch.float32, device=self.device)
-
-        pos = self.error_history_pos
-        self.vx_error_history[np.arange(self.num_envs), pos] = np.abs(self.commands[:, 0] - self.base_velocity_body[:, 0])
-        self.wz_error_history[np.arange(self.num_envs), pos] = np.abs(self.commands[:, 1] - self.base_velocity_body[:, 2])
-        self.error_history_pos = (pos + 1) % self.vx_error_history.shape[1]
 
     def _update_histories(self, actions: np.ndarray) -> None:
         self.q_cmd_history[:, 1:] = self.q_cmd_history[:, :-1]
@@ -277,18 +277,11 @@ class CrankBotWalkEnv(VecEnv):
 
     def _update_success_and_curriculum(self, dones: np.ndarray) -> None:
         for env_id in np.nonzero(dones)[0]:
-            success = (
-                int(self.episode_length_buf[env_id]) >= self.vx_error_history.shape[1]
-                and not self.episode_body_contact[env_id]
-                and self.fall[env_id] == 0.0
-                and self.vx_error_history[env_id].mean() < self.cfg.vx_success_threshold
-                and self.wz_error_history[env_id].mean() < self.cfg.wz_success_threshold
-            )
-            self.success_history.append(bool(success))
+            self.success_history.append(bool(self.goal_reached[env_id]))
 
         if len(self.success_history) == self.success_history.maxlen and np.mean(self.success_history) > 0.75:
-            self.current_max_vx = min(self.cfg.target_max_vx, self.current_max_vx * 1.15)
-            self.current_max_wz = min(self.cfg.target_max_wz, self.current_max_wz + 0.05)
+            self.current_goal_forward = min(self.cfg.target_goal_forward, self.current_goal_forward * 1.15)
+            self.current_goal_lateral = min(self.cfg.target_goal_lateral, self.current_goal_lateral + 0.03)
             self.current_initial_pose_noise = min(
                 self.cfg.target_initial_pose_noise, self.current_initial_pose_noise + 0.03
             )
@@ -304,8 +297,8 @@ class CrankBotWalkEnv(VecEnv):
             (
                 self.q_cmd_history.reshape(self.num_envs, -1),
                 self.action_history.reshape(self.num_envs, -1),
-                (self.commands[:, 0:1] / self.cfg.global_max_vx),
-                (self.commands[:, 1:2] / self.cfg.global_max_wz),
+                (self.goal_bearing[:, None] / math.pi),
+                (self.goal_range[:, None] / self.target_goal_range),
                 np.sin(self.phase)[:, None],
                 np.cos(self.phase)[:, None],
             ),
@@ -330,14 +323,46 @@ class CrankBotWalkEnv(VecEnv):
         return {
             "time_outs": time_outs.to(dtype=torch.float32, device=self.device),
             "log": {
-                "/env/mean_vx": torch.as_tensor(self.base_velocity_body[:, 0].mean(), device=self.device),
-                "/env/mean_wz": torch.as_tensor(self.base_velocity_body[:, 2].mean(), device=self.device),
+                "/env/mean_goal_range": torch.as_tensor(self.goal_range.mean(), device=self.device),
+                "/env/goal_reached": torch.as_tensor(self.goal_reached.mean(), device=self.device),
                 "/env/body_contact": torch.as_tensor(self.body_contact.mean(), device=self.device),
                 "/env/success_rate": torch.as_tensor(success_rate, device=self.device),
-                "/curriculum/max_vx": torch.as_tensor(self.current_max_vx, device=self.device),
-                "/curriculum/max_wz": torch.as_tensor(self.current_max_wz, device=self.device),
+                "/curriculum/goal_forward": torch.as_tensor(self.current_goal_forward, device=self.device),
+                "/curriculum/goal_lateral": torch.as_tensor(self.current_goal_lateral, device=self.device),
             },
         }
+
+    def _sample_goal(self, env_id: int, data: mujoco.MjData) -> None:
+        forward = self.rng.uniform(self.cfg.initial_goal_forward, self.current_goal_forward)
+        lateral = 0.0
+        if self.current_goal_lateral > 0.0:
+            lateral = self.rng.uniform(-self.current_goal_lateral, self.current_goal_lateral)
+
+        base_xmat = data.xmat[self.base_body_id].reshape(3, 3)
+        base_xy = data.xpos[self.base_body_id, :2]
+        forward_axis = base_xmat[:2, 0]
+        left_axis = base_xmat[:2, 1]
+        self.goal_pos_world[env_id] = base_xy + forward * forward_axis + lateral * left_axis
+
+    def _update_goal_signals(self, env_ids: np.ndarray) -> None:
+        for env_id in env_ids:
+            data = self.data[int(env_id)]
+            delta = self.goal_pos_world[env_id] - data.xpos[self.base_body_id, :2]
+            goal_angle = math.atan2(delta[1], delta[0])
+            self.goal_bearing[env_id] = self._wrap_to_pi(goal_angle - self.base_yaw[env_id])
+            self.goal_range[env_id] = float(np.linalg.norm(delta))
+            self.goal_reached[env_id] = self.goal_range[env_id] < self.cfg.goal_reach_radius
+
+    def _update_goal_site(self) -> None:
+        if self.goal_site_id < 0 or self.num_envs == 0:
+            return
+
+        self.model.site_pos[self.goal_site_id] = (
+            self.goal_pos_world[0, 0],
+            self.goal_pos_world[0, 1],
+            self.cfg.goal_site_z,
+        )
+        mujoco.mj_forward(self.model, self.data[0])
 
     def _contact_flags(self, data: mujoco.MjData) -> tuple[np.ndarray, bool]:
         foot_contacts = np.zeros(4, dtype=np.float64)
@@ -372,8 +397,20 @@ class CrankBotWalkEnv(VecEnv):
     def _optional_geom_id(self, name: str) -> int:
         return mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, name)
 
+    def _optional_site_id(self, name: str) -> int:
+        return mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_SITE, name)
+
     def _required_id(self, obj_type: mujoco.mjtObj, name: str) -> int:
         obj_id = mujoco.mj_name2id(self.model, obj_type, name)
         if obj_id < 0:
             raise ValueError(f"Could not find MuJoCo object '{name}' in {self.xml_path}.")
         return obj_id
+
+    @staticmethod
+    def _yaw_from_xmat(xmat: np.ndarray) -> float:
+        mat = xmat.reshape(3, 3)
+        return math.atan2(mat[1, 0], mat[0, 0])
+
+    @staticmethod
+    def _wrap_to_pi(angle: float) -> float:
+        return (angle + math.pi) % (2.0 * math.pi) - math.pi
