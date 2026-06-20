@@ -33,6 +33,7 @@ class GoalMetricsCallback(BaseCallback):
 
         goal_forward = mean_log("/curriculum/goal_forward")
         goal_lateral = mean_log("/curriculum/goal_lateral")
+        goal_reach_radius = mean_log("/curriculum/goal_reach_radius")
         self.logger.record("goal/range", mean_log("/env/mean_goal_range"))
         self.logger.record("goal/reached_rate", mean_log("/env/goal_reached"))
         self.logger.record("goal/success_rate", mean_log("/env/success_rate"))
@@ -41,6 +42,7 @@ class GoalMetricsCallback(BaseCallback):
         self.logger.record("goal/body_contact", mean_log("/env/body_contact"))
         self.logger.record("curriculum/goal_forward", goal_forward)
         self.logger.record("curriculum/goal_lateral", goal_lateral)
+        self.logger.record("curriculum/goal_reach_radius", goal_reach_radius)
         self.logger.record("curriculum/goal_max_distance", math.hypot(goal_forward, goal_lateral))
         return True
 

@@ -59,8 +59,9 @@ class CrankBotWalkEnvConfig:
     initial_goal_forward: float = 0.25
     target_goal_forward: float = 0.60
     initial_goal_lateral: float = 0.0
-    target_goal_lateral: float = 0.30
+    target_goal_lateral: float = 0.25
     goal_reach_radius: float = 0.20
+    target_goal_reach_radius: float = 0.10
     goal_reward_scale: float = 0.25
     goal_site_name: str = "goal_site"
     goal_site_z: float = 0.02
@@ -166,6 +167,7 @@ class CrankBotWalkEnv(VecEnv):
 
         self.current_goal_forward = cfg.initial_goal_forward
         self.current_goal_lateral = cfg.initial_goal_lateral
+        self.current_goal_reach_radius = cfg.goal_reach_radius
         self.current_initial_pose_noise = cfg.initial_pose_noise
         self.current_smoothness_coef = cfg.smoothness_coef
         self.current_action_coef = cfg.action_coef
@@ -312,6 +314,9 @@ class CrankBotWalkEnv(VecEnv):
         if len(self.success_history) == self.success_history.maxlen and np.mean(self.success_history) > 0.75:
             self.current_goal_forward = min(self.cfg.target_goal_forward, self.current_goal_forward * 1.15)
             self.current_goal_lateral = min(self.cfg.target_goal_lateral, self.current_goal_lateral + 0.03)
+            self.current_goal_reach_radius = max(
+                self.cfg.target_goal_reach_radius, self.current_goal_reach_radius - 0.01
+            )
             self.current_initial_pose_noise = min(
                 self.cfg.target_initial_pose_noise, self.current_initial_pose_noise + 0.03
             )
@@ -362,6 +367,9 @@ class CrankBotWalkEnv(VecEnv):
                 "/env/success_rate": torch.as_tensor(success_rate, device=self.device),
                 "/curriculum/goal_forward": torch.as_tensor(self.current_goal_forward, device=self.device),
                 "/curriculum/goal_lateral": torch.as_tensor(self.current_goal_lateral, device=self.device),
+                "/curriculum/goal_reach_radius": torch.as_tensor(
+                    self.current_goal_reach_radius, device=self.device
+                ),
             },
         }
 
@@ -384,7 +392,7 @@ class CrankBotWalkEnv(VecEnv):
             goal_angle = math.atan2(delta[1], delta[0])
             self.goal_bearing[env_id] = self._wrap_to_pi(goal_angle - self.base_yaw[env_id])
             self.goal_range[env_id] = float(np.linalg.norm(delta))
-            self.goal_reached[env_id] = self.goal_range[env_id] < self.cfg.goal_reach_radius
+            self.goal_reached[env_id] = self.goal_range[env_id] < self.current_goal_reach_radius
 
     def _update_goal_site(self) -> None:
         if self.goal_site_id < 0 or self.num_envs == 0:
