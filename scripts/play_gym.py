@@ -35,6 +35,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--device", default="auto")
     parser.add_argument("--headless", action="store_true")
     parser.add_argument("--realtime", action="store_true")
+    parser.add_argument(
+        "--disable-privileged",
+        action="store_true",
+        help="Use the 68-element actor observation instead of the 80-element privileged observation.",
+    )
     parser.add_argument("--deterministic", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument(
         "--curriculum-progress",
@@ -72,7 +77,10 @@ def main() -> None:
         raise ValueError("--curriculum-progress must be between 0.0 and 1.0.")
     model_path = Path(args.model) if args.model else latest_model(args.log_root)
 
-    env = CrankBotWalkGymEnv(CrankBotWalkEnvConfig(xml_path=args.xml, num_envs=1, seed=args.seed))
+    env = CrankBotWalkGymEnv(
+        CrankBotWalkEnvConfig(xml_path=args.xml, num_envs=1, seed=args.seed),
+        disable_privileged=args.disable_privileged,
+    )
     set_curriculum_progress(env, args.curriculum_progress)
     model = SAC.load(str(model_path), device=args.device)
 

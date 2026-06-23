@@ -98,6 +98,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--run-name", default=None)
     parser.add_argument("--logger", choices=("wandb", "tensorboard", "none"), default="wandb")
     parser.add_argument("--wandb-project", default="crankbot-walk-gym")
+    parser.add_argument(
+        "--disable-privileged",
+        action="store_true",
+        help="Expose only the 68-element actor observation instead of the 80-element privileged observation.",
+    )
     parser.add_argument("--save-interval-minutes", type=float, default=15.0)
     parser.add_argument("--save-freq", type=int, default=None, help=argparse.SUPPRESS)
     parser.add_argument("--save-replay-buffer", action="store_true")
@@ -138,7 +143,10 @@ def main() -> None:
     def make_env(rank: int):
         def _init() -> Monitor:
             cfg = CrankBotWalkEnvConfig(xml_path=args.xml, num_envs=1, seed=args.seed + rank)
-            return Monitor(CrankBotWalkGymEnv(cfg), filename=str(monitor_dir / f"{rank}"))
+            return Monitor(
+                CrankBotWalkGymEnv(cfg, disable_privileged=args.disable_privileged),
+                filename=str(monitor_dir / f"{rank}"),
+            )
 
         return _init
 

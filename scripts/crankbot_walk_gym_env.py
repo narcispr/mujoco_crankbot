@@ -22,17 +22,20 @@ class CrankBotWalkGymEnv(CrankBotWalkEnv, gym.Env):
         cfg: CrankBotWalkEnvConfig | None = None,
         device: str = "cpu",
         render_mode: str | None = None,
+        disable_privileged: bool = False,
     ) -> None:
         self.render_mode = render_mode
+        self.disable_privileged = disable_privileged
         self._gym_initializing = True
         CrankBotWalkEnv.__init__(self, replace(cfg or CrankBotWalkEnvConfig(), num_envs=1), device=device)
         self._gym_initializing = False
 
         self.action_space = spaces.Box(-1.0, 1.0, shape=(self.num_actions,), dtype=np.float32)
+        obs_size = self.num_obs if self.disable_privileged else self.num_privileged_obs
         self.observation_space = spaces.Box(
             -np.inf,
             np.inf,
-            shape=(self.num_privileged_obs,),
+            shape=(obs_size,),
             dtype=np.float32,
         )
 
@@ -51,7 +54,7 @@ class CrankBotWalkGymEnv(CrankBotWalkEnv, gym.Env):
             self.rng = np.random.default_rng(seed)
 
         CrankBotWalkEnv.reset(self)
-        return self._privileged_obs(), self._info({})
+        return self._gym_obs(), self._info({})
 
     def step(self, action: np.ndarray) -> tuple[np.ndarray, float, bool, bool, dict[str, Any]]:
         action_tensor = torch.as_tensor(action, dtype=torch.float32, device=self.device).reshape(1, self.num_actions)
@@ -59,13 +62,21 @@ class CrankBotWalkGymEnv(CrankBotWalkEnv, gym.Env):
 
         truncated = bool(extras["time_outs"][0].item())
         terminated = bool(done[0].item() and not truncated)
-        return self._privileged_obs(), float(reward[0].item()), terminated, truncated, self._info(extras)
+        return self._gym_obs(), float(reward[0].item()), terminated, truncated, self._info(extras)
 
     def render(self) -> None:
         return None
 
     def _privileged_obs(self) -> np.ndarray:
         return self.get_privileged_observations()[0].detach().cpu().numpy().astype(np.float32, copy=True)
+
+    def _actor_obs(self) -> np.ndarray:
+        return self.obs_buf[0].detach().cpu().numpy().astype(np.float32, copy=True)
+
+    def _gym_obs(self) -> np.ndarray:
+        if self.disable_privileged:
+            return self._actor_obs()
+        return self._privileged_obs()
 
     def _info(self, extras: dict[str, Any]) -> dict[str, Any]:
         info: dict[str, Any] = {
