@@ -87,9 +87,9 @@ $$
 
 After training with SAC, this behavior has been obtained:
 
-https://youtu.be/LTj4IBt9pyA
 
-<iframe width="560" height="315" src="https://youtu.be/LTj4IBt9pyA" frameborder="0" allowfullscreen></iframe>
+
+[![Watch the video](media/youtube.png)](https://youtu.be/LTj4IBt9pyA)
 
 
 
