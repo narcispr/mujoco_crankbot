@@ -496,3 +496,8 @@ critic hidden dims: [256, 256, 128]
 activation: ELU or Tanh
 
 Observation normalization is strongly recommended.
+
+
+## Notes
+
+Be sure that the training autoreset resets not only physics state and obs, but also arbitrary custom state. Since this environment’s observation is mostly command/history state, add something to resets/resample those fields instead of silently carrying stale histories across episodes.
