@@ -1,0 +1,14 @@
+{
+  "center": {
+    "description": "All servos at the calibrated neutral point.",
+    "setpoints": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+  },
+  "stand_approx": {
+    "description": "Approximate get_up final pose from firmware/robo_dog_sketch.ino.",
+    "setpoints": [0.0, 1.0, 0.0, -1.0, 0.0, -1.0, 0.0, 1.0]
+  },
+  "folded_approx": {
+    "description": "Approximate folded pose from firmware/robo_dog_sketch.ino.",
+    "setpoints": [1.0, -1.0, -1.0, 1.0, -1.0, 1.0, 1.0, -1.0]
+  }
+}
