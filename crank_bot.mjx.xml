@@ -12,10 +12,12 @@
             <geom name="base_collision" type="box" size="0.04 0.09 0.005" pos="0 0 0.005" contype="1" conaffinity="1" group="3" material="visual_black" mass="0.05"/>
             <!-- LEG FRONT LEFT   -->
             <body name="servo1" pos="0.015 -0.05 0.013" euler="0 -1.5708 1.5708">
+                <geom name="front_left_shoulder_collision" type="sphere" size="0.005" pos="0.0 0.0 0.02" contype="1" conaffinity="1" group="3" material="visual_black" mass="0.055"/>
                 <body name="front_left_leg" pos="-0.01 -0.0 0.0825" euler="0 3.14159 0">
                     <joint name="front_left_shoulder_joint" type="hinge" pos="0 0 0" axis="0 0 1" limited="true" range="-180 0" damping="0.15" frictionloss="0.05" armature="0.0005"/>
                     <geom name="front_left_leg_collision" type="capsule" size="0.01 0.022" pos="0.02 0.0 0.01" euler="0 1.5708 0" contype="1" conaffinity="1" group="3" material="visual_black" mass="0.005"/>
                     <body name="front_left_knee" pos="0.03 0.0 0.022" euler="0 3.14159 1.5708">    
+                        <geom name="front_left_elbow_servo_collision" type="sphere" size="0.005" pos="0.0 0.0 0.0" contype="1" conaffinity="1" group="3" material="visual_black" mass="0.0134"/>
                         <body name="front_left_lower_leg" pos="0.00 0.005 0.027" euler="0 0 0">
                             <joint name="front_left_elbow_joint" type="hinge" pos="0.0 0.0 0.0" axis="0 0 1" limited="true" range="-180 0" damping="0.08" frictionloss="0.02" armature="0.0002"/>
                             <geom name="front_left_lower_leg_collision" type="capsule" size="0.0035 0.022" pos="0.0 -0.017 0.003" euler="1.5708 0 0" contype="1" conaffinity="1" group="3" material="visual_black" mass="0.005"/>
@@ -26,11 +28,13 @@
             </body>
             <!-- LEG FRONT RIGHT   -->
             <body name="servo2" pos="-0.015 -0.05 0.013" euler="0 1.5708 1.5708">
+                <geom name="front_right_shoulder_collision" type="sphere" size="0.005" pos="0.0 0.0 0.02" contype="1" conaffinity="1" group="3" material="visual_black" mass="0.055"/>
                 <body name="front_right_leg" pos="-0.01 -0.0 0.0825" euler="0 3.14159 0">
                     <joint name="front_right_shoulder_joint" type="hinge" pos="0 0 0" axis="0 0 1" limited="true" range="0 180" damping="0.15" frictionloss="0.05" armature="0.0005"/>
                     <geom name="front_right_leg_collision" type="capsule" size="0.01 0.022" pos="0.02 0.0 0.01" euler="0 1.5708 0" group="3" material="visual_black" contype="1" conaffinity="1" mass="0.005"/>
                     
                     <body name="front_right_knee" pos="0.03 0.0 0.022" euler="0 3.14159 1.5708">    
+                        <geom name="front_right_elbow_servo_collision" type="sphere" size="0.005" pos="0.0 0.0 0.0" contype="1" conaffinity="1" group="3" material="visual_black" mass="0.0134"/>
                         
                         <body name="front_right_lower_leg" pos="0.00 0.005 0.027" euler="0 0 0">
                             <joint name="front_right_elbow_joint" type="hinge" pos="0.0 0.0 0.0" axis="0 0 1" limited="true" range="0 180" damping="0.08" frictionloss="0.02" armature="0.0002"/>
@@ -42,11 +46,13 @@
             </body>
             <!-- LEG BACK LEFT   -->
              <body name="servo3" pos="0.015 0.05 0.013" euler="0 -1.5708 -1.5708">
+                <geom name="back_left_shoulder_collision" type="sphere" size="0.005" pos="0.0 0.0 0.02" contype="1" conaffinity="1" group="3" material="visual_black" mass="0.055"/>
                 <body name="back_left_leg" pos="-0.01 -0.0 0.0825" euler="0 3.14159 0">
                     <joint name="back_left_shoulder_joint" type="hinge" pos="0 0 0" axis="0 0 1" limited="true" range="0 180" damping="0.15" frictionloss="0.05" armature="0.0005"/>
                     <geom name="back_left_leg_collision" type="capsule" size="0.01 0.022" pos="0.02 0.0 0.01" euler="0 1.5708 0" contype="1" conaffinity="1" group="3" material="visual_black" mass="0.005"/>
                     
                     <body name="back_left_knee" pos="0.03 0.0 0.022" euler="0 3.14159 1.5708">    
+                        <geom name="back_left_elbow_servo_collision" type="sphere" size="0.005" pos="0.0 0.0 0.0" contype="1" conaffinity="1" group="3" material="visual_black" mass="0.0134"/>
                         <body name="back_left_lower_leg" pos="0.00 0.005 0.027" euler="0 0 0">
                             <joint name="back_left_elbow_joint" type="hinge" pos="0.0 0.0 0.0" axis="0 0 1" limited="true" range="-180 0" damping="0.08" frictionloss="0.02" armature="0.0002"/>
                             <geom name="back_left_lower_leg_collision" type="capsule" size="0.0035 0.022" pos="0.0 -0.017 0.003" euler="1.5708 0 0" contype="1" conaffinity="1" group="3" material="visual_black" mass="0.005"/>
@@ -57,11 +63,13 @@
             </body>
             <!-- LEG BACK RIGHT   -->
             <body name="servo4" pos="-0.015 0.05 0.013" euler="0 1.5708 -1.5708">
+                <geom name="back_right_shoulder_collision" type="sphere" size="0.005" pos="0.0 0.0 0.02" contype="1" conaffinity="1" group="3" material="visual_black" mass="0.055"/>
                 <body name="back_right_leg" pos="-0.01 -0.0 0.0825" euler="0 3.14159 0">
                     <joint name="back_right_shoulder_joint" type="hinge" pos="0 0 0" axis="0 0 1" limited="true" range="-180 0" damping="0.15" frictionloss="0.05" armature="0.0005"/>
                     <geom name="back_right_leg_collision" type="capsule" size="0.01 0.022" pos="0.02 0.0 0.01" euler="0 1.5708 0" contype="1" conaffinity="1" group="3" material="visual_black" mass="0.005"/>
                     
                     <body name="back_right_knee" pos="0.03 0.0 0.022" euler="0 3.14159 1.5708">    
+                        <geom name="back_right_elbow_servo_collision" type="sphere" size="0.005" pos="0.0 0.0 0.0" contype="1" conaffinity="1" group="3" material="visual_black" mass="0.0134"/>
                         <body name="back_right_lower_leg" pos="0.00 0.005 0.027" euler="0 0 0">
                             <joint name="back_right_elbow_joint" type="hinge" pos="0.0 0.0 0.0" axis="0 0 1" limited="true" range="0 180" damping="0.08" frictionloss="0.02" armature="0.0002"/>
                             <geom name="back_right_lower_leg_collision" type="capsule" size="0.0035 0.022" pos="0.0 -0.017 0.003" euler="1.5708 0 0" contype="1" conaffinity="1" group="3" material="visual_black" mass="0.005"/>
