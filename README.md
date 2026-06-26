@@ -292,6 +292,45 @@ $$
 | $-p_{body}$ | Penalty when the base touches the floor |
 | $-p_{fall}$ | Fall penalty when base height is below the fall threshold |
 
+### Training MJX/Warp amb Playground
+
+Per entrenar a GPU amb l'entorn MJX actor-only i provar el backend Warp/Playground, crea un venv nou amb Python 3.11 o superior. Un `uv pip install` sobre el `.venv` antic no canvia la versió de Python.
+
+```bash
+uv venv --python 3.11
+source .venv/bin/activate
+uv pip install -r requirements.txt
+```
+
+Entrenament PPO amb 2048 entorns:
+
+```bash
+python scripts/train.mjx.py \
+  --algorithm ppo \
+  --backend warp \
+  --num-envs 2048 \
+  --num-eval-envs 256 \
+  --timesteps 10000000
+```
+
+Entrenament SAC:
+
+```bash
+python scripts/train.mjx.py \
+  --algorithm sac \
+  --backend warp \
+  --num-envs 2048 \
+  --num-eval-envs 256 \
+  --timesteps 10000000
+```
+
+Notes ràpides:
+
+- Si surt `backend='warp'` no disponible, comprova que el venv sigui Python 3.11+ i que `warp-lang` i `playground[learning]` s'hagin instal·lat.
+- Si veus errors de CUDA/JAX, revisa que la versió instal·lada de `jax[cuda13]` encaixi amb el driver de la GPU.
+- Si vols comprovar el pipeline abans d'un run llarg, baixa `--num-envs 32 --num-eval-envs 8 --timesteps 1000 --logger none --no-checkpoints`.
+- Si Warp continua donant problemes, prova temporalment `--backend mjx` per separar errors de l'entorn dels errors del backend.
+
 After training with SAC, this behavior has been obtained:
 
 

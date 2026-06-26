@@ -5,6 +5,8 @@ stable-baselines3
 wandb
 tensorboard
 jax[cuda13]<0.10
-brax
+brax>=0.14.2
 flax
 optax
+playground[learning]>=0.2.0; python_version >= "3.11"
+warp-lang>=1.11; python_version >= "3.11"
