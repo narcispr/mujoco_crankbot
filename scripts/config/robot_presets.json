@@ -3,12 +3,16 @@
     "description": "All servos at the calibrated neutral point.",
     "setpoints": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
   },
-  "stand_approx": {
-    "description": "Approximate get_up final pose from firmware/robo_dog_sketch.ino.",
-    "setpoints": [0.0, 1.0, 0.0, -1.0, 0.0, -1.0, 0.0, 1.0]
+  "stretch": {
+    "description": "legs to maximum extension.",
+    "setpoints": [0.0, -1.0, 0.0, -1.0, 0.0, -1.0, 0.0, 1.0]
   },
-  "folded_approx": {
-    "description": "Approximate folded pose from firmware/robo_dog_sketch.ino.",
-    "setpoints": [1.0, -1.0, -1.0, 1.0, -1.0, 1.0, 1.0, -1.0]
+  "folded": {
+    "description": "Folded pose.",
+    "setpoints": [1.0, 1.0, -1.0, 1.0, -1.0, 1.0, 1.0, -1.0]
+  },
+  "stand": {
+    "description": "Approximate stand pose.",
+    "setpoints": [0.3, 1.0, 0.4, -1.0, -0.3, -1.0, 0.3, 1.0]
   }
 }
